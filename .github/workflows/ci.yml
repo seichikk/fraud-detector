@@ -1,0 +1,119 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: линтеры, типы, гигиена
+    runs-on: ubuntu-latest
+    steps:
+      - name: забираем код
+        uses: actions/checkout@v7
+
+      - name: ставим uv
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+
+      - name: ставим зависимости
+        run: uv sync --locked
+
+      - name: проверяем форматирование
+        run: uv run ruff format --check .
+
+      - name: гоняем линтер
+        run: uv run ruff check --output-format=github .
+
+      - name: проверяем типы
+        run: uv run mypy
+
+      - name: гоняем остальные pre-commit хуки
+        run: uv run pre-commit run --all-files --show-diff-on-failure
+        env:
+          SKIP: ruff-check,ruff-format,mypy
+
+      - name: проверяем dockerfile
+        uses: hadolint/hadolint-action@v3.5.0
+        with:
+          dockerfile: Dockerfile
+
+  test:
+    name: тесты и покрытие
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: fraud
+          POSTGRES_PASSWORD: fraud
+          POSTGRES_DB: fraud
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fraud -d fraud"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://fraud:fraud@localhost:5432/fraud
+    steps:
+      - name: забираем код
+        uses: actions/checkout@v7
+
+      - name: ставим uv
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+
+      - name: ставим зависимости
+        run: uv sync --locked
+
+      - name: гоняем тесты с покрытием
+        run: uv run pytest --cov --cov-report=term-missing --cov-report=xml
+
+      - name: пишем покрытие в сводку
+        if: always()
+        run: uv run coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
+
+      - name: сохраняем отчёт о покрытии
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-xml
+          path: coverage.xml
+
+  smoke:
+    name: сборка образа и дымовой тест
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - name: забираем код
+        uses: actions/checkout@v7
+
+      - name: поднимаем приложение с базой
+        run: docker compose up --build --detach --wait --wait-timeout 120
+
+      - name: дёргаем все три ручки
+        run: |
+          curl --fail --silent --show-error http://localhost:8000/healthz
+          curl --fail --silent --show-error http://localhost:8000/api/v1/version
+          curl --fail --silent --show-error http://localhost:8000/api/v1/health
+
+      - name: показываем логи
+        if: always()
+        run: docker compose logs
+
+      - name: гасим окружение
+        if: always()
+        run: docker compose down --volumes
