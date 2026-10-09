@@ -20,6 +20,7 @@ build-backend = "uv_build"
 dev = [
     "httpx>=0.28.1",
     "mypy>=2.3.1",
+    "pandas-stubs>=3.0.5.260914",
     "pre-commit>=4.6.2",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
