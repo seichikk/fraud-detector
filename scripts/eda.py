@@ -133,9 +133,7 @@ def main() -> None:
 
     flagged_count = int(df["isFlaggedFraud"].sum())
 
-    flagged_fraud_count = int(
-        ((df["isFlaggedFraud"] == 1) & (df["isFraud"] == 1)).sum()
-    )
+    flagged_fraud_count = int(((df["isFlaggedFraud"] == 1) & (df["isFraud"] == 1)).sum())
 
     missing_count = int(df.isna().sum().sum())
 
@@ -167,11 +165,7 @@ def main() -> None:
 
     # Количество пропущенных значений в каждом столбце.
     missing_values = (
-        df.isna()
-        .sum()
-        .rename("Количество пропусков")
-        .rename_axis("Столбец")
-        .reset_index()
+        df.isna().sum().rename("Количество пропусков").rename_axis("Столбец").reset_index()
     )
 
     # Сопоставление флага существующей системы и фактического класса.
@@ -191,11 +185,7 @@ def main() -> None:
     )
 
     # Описательная статистика числовых признаков.
-    numeric_stats = (
-        df[NUMERIC_COLUMNS]
-        .describe()
-        .rename(columns=NUMERIC_LABELS, index=STAT_LABELS)
-    )
+    numeric_stats = df[NUMERIC_COLUMNS].describe().rename(columns=NUMERIC_LABELS, index=STAT_LABELS)
 
     # Сохраняем таблицы и сводку для дальнейшего изучения.
     class_distribution.to_csv(
@@ -257,9 +247,7 @@ def main() -> None:
         )
 
     if missing_count == 0:
-        missing_interpretation = (
-            "В проанализированных столбцах пропущенных значений нет."
-        )
+        missing_interpretation = "В проанализированных столбцах пропущенных значений нет."
     else:
         missing_interpretation = (
             f"В проанализированных столбцах найдено пропущенных значений: "

@@ -181,9 +181,7 @@ def main() -> None:
         raise ValueError("В целевом столбце isFraud есть пропуски.")
 
     if set(df[TARGET].unique()) != {0, 1}:
-        raise ValueError(
-            "Для обучения должны присутствовать оба класса: 0 и 1."
-        )
+        raise ValueError("Для обучения должны присутствовать оба класса: 0 и 1.")
 
     print(f"Всего транзакций: {len(df):,}")
     print("Вычисляем контрольную сумму исходного файла...")
@@ -323,12 +321,8 @@ def main() -> None:
             predictions = (probabilities >= 0.5).astype("int8")
 
             metrics = {
-                "pr_auc": float(
-                    average_precision_score(y_test, probabilities)
-                ),
-                "roc_auc": float(
-                    roc_auc_score(y_test, probabilities)
-                ),
+                "pr_auc": float(average_precision_score(y_test, probabilities)),
+                "roc_auc": float(roc_auc_score(y_test, probabilities)),
                 "precision": float(
                     precision_score(
                         y_test,
@@ -350,9 +344,7 @@ def main() -> None:
                         zero_division=0,
                     )
                 ),
-                "accuracy": float(
-                    accuracy_score(y_test, predictions)
-                ),
+                "accuracy": float(accuracy_score(y_test, predictions)),
             }
 
             mlflow.log_metrics(metrics)
@@ -410,11 +402,7 @@ def main() -> None:
 
     print("\nЭтап 5 из 5. Сравниваем модели...")
 
-    comparison = (
-        pd.DataFrame(results)
-        .sort_values("pr_auc", ascending=False)
-        .reset_index(drop=True)
-    )
+    comparison = pd.DataFrame(results).sort_values("pr_auc", ascending=False).reset_index(drop=True)
 
     comparison_path = OUTPUT_DIR / "model_comparison.csv"
 
@@ -449,9 +437,7 @@ def main() -> None:
     )
 
     # Отдельный Run содержит итоговую сравнительную таблицу.
-    with mlflow.start_run(
-        run_name="model-comparison-summary"
-    ) as summary_run:
+    with mlflow.start_run(run_name="model-comparison-summary") as summary_run:
         mlflow.log_artifact(str(comparison_path))
         mlflow.log_artifact(str(best_info_path))
 

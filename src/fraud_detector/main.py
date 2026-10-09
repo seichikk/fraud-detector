@@ -96,10 +96,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 app.state.fraud_model = model
                 app.state.fraud_model_version = version
             else:
-                logger.warning(
-                    "MLFLOW_TRACKING_URI не задан. "
-                    "Предсказания будут недоступны."
-                )
+                logger.warning("MLFLOW_TRACKING_URI не задан. Предсказания будут недоступны.")
 
             logger.info(
                 "Сервис запущен, версия %s",

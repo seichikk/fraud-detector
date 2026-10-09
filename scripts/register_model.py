@@ -14,9 +14,7 @@ MODEL_ALIAS = "champion"
 
 def main() -> None:
     if not INFO_PATH.exists():
-        raise FileNotFoundError(
-            f"Не найден файл с информацией о модели: {INFO_PATH}"
-        )
+        raise FileNotFoundError(f"Не найден файл с информацией о модели: {INFO_PATH}")
 
     with INFO_PATH.open("r", encoding="utf-8") as file:
         model_info = json.load(file)

@@ -32,9 +32,7 @@ async def process_transaction(
         )
 
     try:
-        input_data = pd.DataFrame(
-            [transaction.model_dump(by_alias=True)]
-        )
+        input_data = pd.DataFrame([transaction.model_dump(by_alias=True)])
 
         probability = float(model.predict_proba(input_data)[0, 1])
         is_fraud = probability >= PREDICTION_THRESHOLD
