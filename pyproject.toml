@@ -29,7 +29,11 @@ dev = [
 web = [
     "asyncpg>=0.31.0",
     "fastapi>=0.141.1",
+    "matplotlib>=3.11.2",
+    "mlflow>=3.17.0",
+    "pandas>=3.0.6",
     "pydantic-settings>=2.15.0",
+    "scikit-learn>=1.9.1",
     "sqlalchemy[asyncio]>=2.0.54",
     "uvicorn[standard]>=0.53.0",
 ]
@@ -47,6 +51,7 @@ ignore = ["RUF001", "RUF002", "RUF003"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]
+"scripts/**" = ["T201", "N806"]
 
 [tool.mypy]
 python_version = "3.14"
