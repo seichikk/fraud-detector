@@ -26,6 +26,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-fraud}:${POSTGRES_PASSWORD:-fraud}@db:5432/${POSTGRES_DB:-fraud}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_LOAD_MODEL: "${MLFLOW_LOAD_MODEL:-true}"
     ports:
       - "8000:8000"
     depends_on:

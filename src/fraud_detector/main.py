@@ -20,7 +20,6 @@ from fraud_detector.core.middleware import log_requests
 from fraud_detector.db.engine import create_engine
 
 logger = logging.getLogger(__name__)
-
 MODEL_NAME = "FraudDetectionModel"
 MODEL_ALIAS = "champion"
 
@@ -88,15 +87,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         try:
             tracking_uri = os.getenv("MLFLOW_TRACKING_URI")
+            load_model = os.getenv("MLFLOW_LOAD_MODEL", "true").strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
 
-            if tracking_uri:
-                # Модель загружается один раз при старте приложения.
+            if not tracking_uri:
+                logger.warning("MLFLOW_TRACKING_URI не задан. Предсказания будут недоступны.")
+            elif not load_model:
+                logger.warning(
+                    "Загрузка модели отключена настройкой MLFLOW_LOAD_MODEL. "
+                    "Предсказания будут недоступны."
+                )
+            else:
                 model, version = load_champion_model(tracking_uri)
-
                 app.state.fraud_model = model
                 app.state.fraud_model_version = version
-            else:
-                logger.warning("MLFLOW_TRACKING_URI не задан. Предсказания будут недоступны.")
 
             logger.info(
                 "Сервис запущен, версия %s",
@@ -118,7 +126,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = app_settings
 
     app.middleware("http")(log_requests)
-
     app.include_router(system.router)
     app.include_router(api_v1_router)
     app.include_router(process_router)
