@@ -7,8 +7,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-fraud}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fraud}
       POSTGRES_DB: ${POSTGRES_DB:-fraud}
-    ports:
-      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -27,11 +25,15 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-fraud}:${POSTGRES_PASSWORD:-fraud}@db:5432/${POSTGRES_DB:-fraud}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_LOAD_MODEL: "${MLFLOW_LOAD_MODEL:-true}"
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
+      mlflow:
+        condition: service_started
     restart: unless-stopped
     logging:
       driver: json-file
@@ -39,5 +41,68 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  mlflow-db:
+    image: postgres:17-alpine
+    container_name: mlflow-db
+    environment:
+      POSTGRES_USER: mlflow
+      POSTGRES_PASSWORD: mlflow
+      POSTGRES_DB: mlflow
+    volumes:
+      - mlflow_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mlflow -d mlflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  minio:
+    image: cgr.dev/chainguard/minio:latest
+    container_name: mlflow-minio
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio12345
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    restart: unless-stopped
+
+  mlflow:
+    build:
+      context: .
+      dockerfile: Dockerfile.mlflow
+    image: fraud-detector-mlflow:local
+    container_name: mlflow-server
+    depends_on:
+      mlflow-db:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    ports:
+      - "5000:5000"
+    environment:
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      MLFLOW_SERVER_ALLOWED_HOSTS: "localhost,localhost:5000,localhost:*,127.0.0.1,127.0.0.1:5000,mlflow,mlflow:5000"
+      AWS_ACCESS_KEY_ID: minio
+      AWS_SECRET_ACCESS_KEY: minio12345
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_S3_ADDRESSING_STYLE: path
+    command: >
+      sh -c "
+      mlflow db upgrade postgresql://mlflow:mlflow@mlflow-db:5432/mlflow &&
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri postgresql://mlflow:mlflow@mlflow-db:5432/mlflow
+      --artifacts-destination s3://mlflow-artifacts
+      "
+    restart: unless-stopped
+
 volumes:
   pgdata:
+  mlflow_pgdata:
+  minio_data:
