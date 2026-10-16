@@ -41,6 +41,7 @@ web = [
 
 [tool.uv]
 default-groups = ["dev", "web"]
+constraint-dependencies = ["cryptography<49"]
 
 [tool.ruff]
 line-length = 100
