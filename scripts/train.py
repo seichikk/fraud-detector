@@ -69,7 +69,6 @@ DTYPES = {
 
 
 def calculate_sha256(path: Path) -> str:
-    """Вычисляет контрольную сумму исходного файла."""
     digest = hashlib.sha256()
 
     with path.open("rb") as file:
@@ -80,12 +79,8 @@ def calculate_sha256(path: Path) -> str:
 
 
 def create_preprocessor() -> ColumnTransformer:
-    """Подготавливает числовые и категориальные признаки."""
     numeric_pipeline = Pipeline(
-        steps=[
-            ("imputer", SimpleImputer(strategy="median")),
-            ("scaler", StandardScaler()),
-        ]
+        steps=[("imputer", SimpleImputer(strategy="median")), ("scaler", StandardScaler())]
     )
 
     categorical_pipeline = Pipeline(
@@ -104,21 +99,15 @@ def create_preprocessor() -> ColumnTransformer:
 
 
 def save_diagnostics(
-    y_true: pd.Series,
-    predictions: np.ndarray,
-    probabilities: np.ndarray,
-    output_dir: Path,
+    y_true: pd.Series, predictions: np.ndarray, probabilities: np.ndarray, output_dir: Path
 ) -> None:
-    """Сохраняет графики и текстовый отчёт о качестве модели."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Матрица ошибок показывает правильные и ошибочные предсказания.
     matrix = confusion_matrix(y_true, predictions, labels=[0, 1])
 
     figure, axis = plt.subplots(figsize=(6, 5))
     display = ConfusionMatrixDisplay(
-        confusion_matrix=matrix,
-        display_labels=["Обычная", "Мошенническая"],
+        confusion_matrix=matrix, display_labels=["Обычная", "Мошенническая"]
     )
     display.plot(ax=axis, values_format=",d", colorbar=False)
     axis.set_title("Матрица ошибок")
@@ -126,11 +115,7 @@ def save_diagnostics(
     figure.savefig(output_dir / "confusion_matrix.png", dpi=150)
     plt.close(figure)
 
-    # Кривая показывает компромисс между Precision и Recall.
-    precision_values, recall_values, _ = precision_recall_curve(
-        y_true,
-        probabilities,
-    )
+    precision_values, recall_values, _ = precision_recall_curve(y_true, probabilities)
 
     figure, axis = plt.subplots(figsize=(7, 5))
     axis.plot(recall_values, precision_values)
@@ -142,21 +127,16 @@ def save_diagnostics(
     figure.savefig(output_dir / "precision_recall_curve.png", dpi=150)
     plt.close(figure)
 
-    # Подробный отчёт по двум классам.
     report = classification_report(
         y_true,
         predictions,
         labels=[0, 1],
-        target_names=[
-            "Обычная транзакция",
-            "Мошенническая транзакция",
-        ],
+        target_names=["Обычная транзакция", "Мошенническая транзакция"],
         zero_division=0,
     )
 
     (output_dir / "classification_report.txt").write_text(
-        "Отчёт о качестве модели\n\n" + report,
-        encoding="utf-8",
+        "Отчёт о качестве модели\n\n" + report, encoding="utf-8"
     )
 
 
@@ -166,13 +146,7 @@ def main() -> None:
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    print("Этап 1 из 5. Загружаем PaySim...")
-
-    df = pd.read_csv(
-        DATA_PATH,
-        usecols=[*FEATURES, TARGET],
-        dtype=DTYPES,
-    )
+    df = pd.read_csv(DATA_PATH, usecols=[*FEATURES, TARGET], dtype=DTYPES)
 
     if df.empty:
         raise ValueError("Датасет не содержит строк.")
@@ -183,19 +157,14 @@ def main() -> None:
     if set(df[TARGET].unique()) != {0, 1}:
         raise ValueError("Для обучения должны присутствовать оба класса: 0 и 1.")
 
-    print(f"Всего транзакций: {len(df):,}")
-    print("Вычисляем контрольную сумму исходного файла...")
+    print(f"всего транзакций: {len(df):,}")
 
     file_digest = calculate_sha256(DATA_PATH)
 
-    # Используем фиксированную случайную выборку для быстрого обучения.
     sample_size = min(SAMPLE_SIZE, len(df))
 
     if sample_size < len(df):
-        df = df.sample(
-            n=sample_size,
-            random_state=RANDOM_STATE,
-        ).reset_index(drop=True)
+        df = df.sample(n=sample_size, random_state=RANDOM_STATE).reset_index(drop=True)
 
     X = df[FEATURES].copy()
     X["type"] = X["type"].astype(object)
@@ -205,56 +174,26 @@ def main() -> None:
     print(f"Мошеннических транзакций: {int(y.sum()):,}")
     print(f"Доля мошеннических транзакций: {y.mean():.6%}")
 
-    # Подготавливаем описание фактически используемой выборки.
     dataset = mlflow.data.from_pandas(
-        df,
-        source=str(DATA_PATH.resolve()),
-        name="PaySim",
-        targets=TARGET,
-        digest=file_digest[:32],
+        df, source=str(DATA_PATH.resolve()), name="PaySim", targets=TARGET, digest=file_digest[:32]
     )
-
-    print("Этап 2 из 5. Разделяем данные...")
 
     X_train, X_test, y_train, y_test = train_test_split(
-        X,
-        y,
-        test_size=0.2,
-        random_state=RANDOM_STATE,
-        stratify=y,
+        X, y, test_size=0.2, random_state=RANDOM_STATE, stratify=y
     )
 
-    print(f"Данные для обучения: {len(X_train):,}")
-    print(f"Данные для проверки: {len(X_test):,}")
-
-    print("Этап 3 из 5. Подготавливаем варианты моделей...")
+    print(f"train: {len(X_train):,}, test: {len(X_test):,}")
 
     models = [
         (
             "logistic-baseline",
-            LogisticRegression(
-                max_iter=200,
-                class_weight=None,
-                random_state=RANDOM_STATE,
-            ),
-            {
-                "model_type": "LogisticRegression",
-                "class_weight": "none",
-                "max_iter": 200,
-            },
+            LogisticRegression(max_iter=200, class_weight=None, random_state=RANDOM_STATE),
+            {"model_type": "LogisticRegression", "class_weight": "none", "max_iter": 200},
         ),
         (
             "logistic-balanced",
-            LogisticRegression(
-                max_iter=200,
-                class_weight="balanced",
-                random_state=RANDOM_STATE,
-            ),
-            {
-                "model_type": "LogisticRegression",
-                "class_weight": "balanced",
-                "max_iter": 200,
-            },
+            LogisticRegression(max_iter=200, class_weight="balanced", random_state=RANDOM_STATE),
+            {"model_type": "LogisticRegression", "class_weight": "balanced", "max_iter": 200},
         ),
         (
             "decision-tree-balanced",
@@ -278,16 +217,9 @@ def main() -> None:
 
     results = []
 
-    print("Этап 4 из 5. Обучаем модели и сохраняем результаты...")
-
     for run_name, classifier, model_params in models:
-        print(f"\nОбучаем модель: {run_name}")
-
         model = Pipeline(
-            steps=[
-                ("preprocessor", create_preprocessor()),
-                ("classifier", classifier),
-            ]
+            steps=[("preprocessor", create_preprocessor()), ("classifier", classifier)]
         )
 
         variant_dir = OUTPUT_DIR / run_name
@@ -312,7 +244,6 @@ def main() -> None:
                 }
             )
 
-            # Связываем используемый датасет с текущим Run.
             mlflow.log_input(dataset, context="training")
 
             model.fit(X_train, y_train)
@@ -323,94 +254,41 @@ def main() -> None:
             metrics = {
                 "pr_auc": float(average_precision_score(y_test, probabilities)),
                 "roc_auc": float(roc_auc_score(y_test, probabilities)),
-                "precision": float(
-                    precision_score(
-                        y_test,
-                        predictions,
-                        zero_division=0,
-                    )
-                ),
-                "recall": float(
-                    recall_score(
-                        y_test,
-                        predictions,
-                        zero_division=0,
-                    )
-                ),
-                "f1": float(
-                    f1_score(
-                        y_test,
-                        predictions,
-                        zero_division=0,
-                    )
-                ),
+                "precision": float(precision_score(y_test, predictions, zero_division=0)),
+                "recall": float(recall_score(y_test, predictions, zero_division=0)),
+                "f1": float(f1_score(y_test, predictions, zero_division=0)),
                 "accuracy": float(accuracy_score(y_test, predictions)),
             }
 
             mlflow.log_metrics(metrics)
 
-            save_diagnostics(
-                y_test,
-                predictions,
-                probabilities,
-                variant_dir,
-            )
+            save_diagnostics(y_test, predictions, probabilities, variant_dir)
 
-            mlflow.log_artifacts(
-                str(variant_dir),
-                artifact_path="diagnostics",
-            )
+            mlflow.log_artifacts(str(variant_dir), artifact_path="diagnostics")
 
-            # Сохраняем модель с примером входных данных и сигнатурой.
             input_example = X_train.head(5).copy()
 
-            signature = infer_signature(
-                input_example,
-                model.predict(input_example),
-            )
+            signature = infer_signature(input_example, model.predict(input_example))
 
-            # Разрешаем только конкретные типы, обнаруженные в нашей
-            # собственной обученной модели. Это не означает, что следует
-            # доверять моделям, полученным из неизвестных источников.
             mlflow.sklearn.log_model(
                 sk_model=model,
                 name="model",
                 signature=signature,
                 input_example=input_example,
-                skops_trusted_types=[
-                    "numpy.dtype",
-                    "sklearn.tree._tree.Tree",
-                ],
+                skops_trusted_types=["numpy.dtype", "sklearn.tree._tree.Tree"],
             )
 
             results.append(
-                {
-                    "run_name": run_name,
-                    "run_id": run.info.run_id,
-                    **model_params,
-                    **metrics,
-                }
+                {"run_name": run_name, "run_id": run.info.run_id, **model_params, **metrics}
             )
 
-            print(f"Run ID: {run.info.run_id}")
-            print(f"PR-AUC: {metrics['pr_auc']:.6f}")
-            print(f"ROC-AUC: {metrics['roc_auc']:.6f}")
-            print(f"Precision: {metrics['precision']:.6f}")
-            print(f"Recall: {metrics['recall']:.6f}")
-            print(f"F1: {metrics['f1']:.6f}")
-            print(f"Accuracy: {metrics['accuracy']:.6f}")
-
-    print("\nЭтап 5 из 5. Сравниваем модели...")
+            print(f"{run_name}: run_id {run.info.run_id}, pr_auc {metrics['pr_auc']:.6f}")
 
     comparison = pd.DataFrame(results).sort_values("pr_auc", ascending=False).reset_index(drop=True)
 
     comparison_path = OUTPUT_DIR / "model_comparison.csv"
 
-    comparison.to_csv(
-        comparison_path,
-        index=False,
-        encoding="utf-8-sig",
-    )
+    comparison.to_csv(comparison_path, index=False, encoding="utf-8-sig")
 
     best = comparison.iloc[0].to_dict()
 
@@ -428,55 +306,28 @@ def main() -> None:
     best_info_path = OUTPUT_DIR / "best_model_info.json"
 
     best_info_path.write_text(
-        json.dumps(
-            best_model_info,
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
+        json.dumps(best_model_info, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
-    # Отдельный Run содержит итоговую сравнительную таблицу.
-    with mlflow.start_run(run_name="model-comparison-summary") as summary_run:
+    with mlflow.start_run(run_name="model-comparison-summary"):
         mlflow.log_artifact(str(comparison_path))
         mlflow.log_artifact(str(best_info_path))
 
-        mlflow.log_metric(
-            "best_pr_auc",
-            float(best["pr_auc"]),
-        )
+        mlflow.log_metric("best_pr_auc", float(best["pr_auc"]))
 
-        mlflow.set_tag(
-            "best_model_run_id",
-            str(best["run_id"]),
-        )
-
-        print(f"Run сводки сравнения: {summary_run.info.run_id}")
+        mlflow.set_tag("best_model_run_id", str(best["run_id"]))
 
     print("\nСравнение моделей по PR-AUC:")
 
     print(
         comparison[
-            [
-                "run_name",
-                "pr_auc",
-                "roc_auc",
-                "precision",
-                "recall",
-                "f1",
-                "accuracy",
-            ]
+            ["run_name", "pr_auc", "roc_auc", "precision", "recall", "f1", "accuracy"]
         ].to_string(index=False)
     )
 
-    print("\nЛучшая модель по PR-AUC:")
-    print(best["run_name"])
-    print(f"PR-AUC: {best['pr_auc']:.6f}")
-    print(f"Run ID: {best['run_id']}")
-
-    print(f"\nТаблица сравнения: {comparison_path}")
-    print(f"Информация о лучшей модели: {best_info_path}")
-    print("Обучение и сравнение завершены успешно.")
+    print(f"\nлучшая модель: {best['run_name']}, run_id {best['run_id']}")
+    print(f"таблица сравнения: {comparison_path}")
+    print(f"лучшая модель для регистрации: {best_info_path}")
 
 
 if __name__ == "__main__":

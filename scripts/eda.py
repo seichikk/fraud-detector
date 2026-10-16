@@ -8,21 +8,15 @@ import mlflow.data
 import numpy as np
 import pandas as pd
 
-# Переключаем графики в режим без графического окна.
 plt.switch_backend("Agg")
 
-# Пути к файлам проекта.
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 DATA_PATH = PROJECT_DIR / "data" / "raw" / "transactions.csv"
 OUTPUT_DIR = PROJECT_DIR / "artifacts" / "eda"
 
-# Настройки MLflow.
 TRACKING_URI = "http://localhost:5000"
 EXPERIMENT_NAME = "fraud-detection"
 
-# Для анализа не загружаем идентификаторы отправителя и получателя.
-# Они не нужны для первоначального анализа распределений и могут
-# занимать много памяти.
 COLUMNS = [
     "step",
     "type",
@@ -35,7 +29,6 @@ COLUMNS = [
     "isFlaggedFraud",
 ]
 
-# Типы данных, позволяющие сократить использование памяти.
 DTYPES = {
     "step": "int32",
     "type": "category",
@@ -48,16 +41,10 @@ DTYPES = {
     "isFlaggedFraud": "int8",
 }
 
-NUMERIC_COLUMNS = [
-    "amount",
-    "oldbalanceOrg",
-    "newbalanceOrig",
-    "oldbalanceDest",
-    "newbalanceDest",
-]
+NUMERIC_COLUMNS = ["amount", "oldbalanceOrg", "newbalanceOrig", "oldbalanceDest", "newbalanceDest"]
 
 NUMERIC_LABELS = {
-    "amount": "Сумма операции (amount)",
+    "amount": "Сумма операции",
     "oldbalanceOrg": "Баланс отправителя до операции",
     "newbalanceOrig": "Баланс отправителя после операции",
     "oldbalanceDest": "Баланс получателя до операции",
@@ -77,7 +64,6 @@ STAT_LABELS = {
 
 
 def calculate_sha256(path: Path) -> str:
-    """Вычисляет SHA-256 для идентификации исходного файла."""
     digest = hashlib.sha256()
 
     with path.open("rb") as file:
@@ -88,41 +74,22 @@ def calculate_sha256(path: Path) -> str:
 
 
 def save_json(data: dict, path: Path) -> None:
-    """Сохраняет результаты в формате JSON."""
-    path.write_text(
-        json.dumps(data, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def main() -> None:
     if not DATA_PATH.is_file():
-        raise FileNotFoundError(
-            f"Не найден файл с данными: {DATA_PATH}\n"
-            "Проверь, что CSV находится в папке data/raw "
-            "и называется transactions.csv."
-        )
+        raise FileNotFoundError(DATA_PATH)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    print("Этап 1 из 5. Читаем датасет PaySim...")
-
-    df = pd.read_csv(
-        DATA_PATH,
-        usecols=COLUMNS,
-        dtype=DTYPES,
-    )
+    df = pd.read_csv(DATA_PATH, usecols=COLUMNS, dtype=DTYPES)
 
     if df.empty:
         raise ValueError("Файл CSV не содержит транзакций.")
 
     if not set(df["isFraud"].unique()).issubset({0, 1}):
         raise ValueError("В столбце isFraud обнаружены неожиданные значения.")
-
-    print(f"Загружено транзакций: {len(df):,}")
-    print(f"Столбцов для анализа: {len(df.columns)}")
-
-    print("Этап 2 из 5. Рассчитываем основные показатели...")
 
     total_count = len(df)
     fraud_count = int(df["isFraud"].sum())
@@ -137,11 +104,8 @@ def main() -> None:
 
     missing_count = int(df.isna().sum().sum())
 
-    # SHA-256 исходного CSV нужен для идентификации его версии.
-    print("Вычисляем контрольную сумму исходного файла...")
     file_digest = calculate_sha256(DATA_PATH)
 
-    # Распределение транзакций по типам.
     type_summary = (
         df.groupby("type", observed=True)
         .agg(
@@ -163,17 +127,15 @@ def main() -> None:
         }
     )
 
-    # Количество пропущенных значений в каждом столбце.
     missing_values = (
         df.isna().sum().rename("Количество пропусков").rename_axis("Столбец").reset_index()
     )
 
-    # Сопоставление флага существующей системы и фактического класса.
     fraud_flag_table = pd.crosstab(
         df["isFlaggedFraud"],
         df["isFraud"],
-        rownames=["Флаг существующей системы (isFlaggedFraud)"],
-        colnames=["Фактический класс (isFraud)"],
+        rownames=["Флаг существующей системы"],
+        colnames=["Фактический класс"],
     )
 
     class_distribution = pd.DataFrame(
@@ -184,37 +146,23 @@ def main() -> None:
         }
     )
 
-    # Описательная статистика числовых признаков.
     numeric_stats = df[NUMERIC_COLUMNS].describe().rename(columns=NUMERIC_LABELS, index=STAT_LABELS)
 
-    # Сохраняем таблицы и сводку для дальнейшего изучения.
     class_distribution.to_csv(
-        OUTPUT_DIR / "распределение_классов.csv",
-        index=False,
-        encoding="utf-8-sig",
+        OUTPUT_DIR / "распределение_классов.csv", index=False, encoding="utf-8-sig"
     )
 
     type_summary_ru.to_csv(
-        OUTPUT_DIR / "статистика_по_типам.csv",
-        index=False,
-        encoding="utf-8-sig",
+        OUTPUT_DIR / "статистика_по_типам.csv", index=False, encoding="utf-8-sig"
     )
 
     missing_values.to_csv(
-        OUTPUT_DIR / "пропущенные_значения.csv",
-        index=False,
-        encoding="utf-8-sig",
+        OUTPUT_DIR / "пропущенные_значения.csv", index=False, encoding="utf-8-sig"
     )
 
-    fraud_flag_table.to_csv(
-        OUTPUT_DIR / "сопоставление_флагов.csv",
-        encoding="utf-8-sig",
-    )
+    fraud_flag_table.to_csv(OUTPUT_DIR / "сопоставление_флагов.csv", encoding="utf-8-sig")
 
-    numeric_stats.to_csv(
-        OUTPUT_DIR / "статистика_числовых_признаков.csv",
-        encoding="utf-8-sig",
-    )
+    numeric_stats.to_csv(OUTPUT_DIR / "статистика_числовых_признаков.csv", encoding="utf-8-sig")
 
     summary = {
         "название_датасета": "PaySim",
@@ -231,107 +179,82 @@ def main() -> None:
 
     save_json(summary, OUTPUT_DIR / "сводка_анализа.json")
 
-    # Формируем интерпретацию результатов на основе реальных данных.
     if fraud_rate < 0.05:
         balance_interpretation = (
-            "Доля мошеннических транзакций ниже 5%. "
-            "Это указывает на выраженный дисбаланс классов. "
-            "При обучении и оценке моделей важно учитывать качество "
-            "обнаружения редкого класса."
+            "мошеннических операций меньше 5%, классы сильно несбалансированы. "
+            "при обучении и оценке главное, насколько хорошо модель ловит редкий класс."
         )
     else:
         balance_interpretation = (
-            "Доля мошеннических транзакций составляет не менее 5%. "
-            "Перед обучением всё равно необходимо учитывать соотношение "
-            "классов и оценивать качество обнаружения мошенничества."
+            "мошеннических операций не меньше 5%, но соотношение классов "
+            "всё равно нужно учитывать и смотреть, как модель находит мошенничество."
         )
 
     if missing_count == 0:
-        missing_interpretation = "В проанализированных столбцах пропущенных значений нет."
+        missing_interpretation = "пропусков в анализируемых столбцах нет."
     else:
         missing_interpretation = (
-            f"В проанализированных столбцах найдено пропущенных значений: "
-            f"{missing_count:,}. Перед обучением нужно решить, как их обработать."
+            f"в анализируемых столбцах {missing_count:,} пропусков, "
+            "до обучения нужно решить, что с ними делать."
         )
 
-    report = f"""ИССЛЕДОВАТЕЛЬСКИЙ АНАЛИЗ ДАННЫХ PAYSIM
+    report = f"""eda датасета paysim
 
-1. ОБЩАЯ ИНФОРМАЦИЯ
+1. общая информация
 
-Исходный файл: {DATA_PATH.name}
-Количество транзакций: {total_count:,}
-Количество столбцов, выбранных для анализа: {len(df.columns)}
-Контрольная сумма SHA-256 исходного файла: {file_digest}
+файл: {DATA_PATH.name}
+транзакций: {total_count:,}
+столбцов в анализе: {len(df.columns)}
+sha-256 файла: {file_digest}
 
-В исходном датасете PaySim 11 столбцов.
-Для первоначального анализа не загружались идентификаторы отправителя
-и получателя (nameOrig и nameDest), поскольку это идентификаторы счетов,
-а не непосредственные количественные характеристики транзакции.
+в paysim 11 столбцов. nameOrig и nameDest не загружались: это номера счетов
+отправителя и получателя, а не числовые характеристики операции.
 
-2. РАСПРЕДЕЛЕНИЕ КЛАССОВ
+2. распределение классов
 
-Обычные транзакции: {normal_count:,}
-Мошеннические транзакции: {fraud_count:,}
-Доля обычных транзакций: {normal_rate:.6%}
-Доля мошеннических транзакций: {fraud_rate:.6%}
+обычные: {normal_count:,} ({normal_rate:.6%})
+мошеннические: {fraud_count:,} ({fraud_rate:.6%})
 
-Интерпретация:
 {balance_interpretation}
 
-Целевой столбец модели: isFraud.
-Значение 1 означает мошенническую транзакцию, а 0 означает обычную.
+целевой столбец isFraud: 1 — мошенничество, 0 — обычная операция.
 
-3. ПРОПУЩЕННЫЕ ЗНАЧЕНИЯ
+3. пропущенные значения
 
-Общее количество пропущенных значений: {missing_count:,}
-
+всего пропусков: {missing_count:,}
 {missing_interpretation}
+по столбцам: пропущенные_значения.csv
 
-Подробная информация по столбцам сохранена в файле
-«пропущенные_значения.csv».
-
-4. ТРАНЗАКЦИИ ПО ТИПАМ
+4. транзакции по типам
 
 {type_summary_ru.to_string(index=False)}
 
-5. ОПИСАТЕЛЬНАЯ СТАТИСТИКА ЧИСЛОВЫХ ПРИЗНАКОВ
+5. статистика числовых признаков
 
 {numeric_stats.to_string()}
 
-6. ФЛАГ СУЩЕСТВУЮЩЕЙ СИСТЕМЫ
+6. флаг isFlaggedFraud
 
-Транзакций с флагом isFlaggedFraud = 1: {flagged_count:,}
-Среди них фактически мошеннических: {flagged_fraud_count:,}
+помечено флагом: {flagged_count:,}
+из них действительно мошеннических: {flagged_fraud_count:,}
 
-isFlaggedFraud представляет собой существующий системный флаг.
-Целевым столбцом остаётся isFraud. Флаг необходимо анализировать отдельно
-и не включать автоматически в признаки модели, чтобы избежать утечки
-информации и оценить способность модели самостоятельно обнаруживать
-мошеннические транзакции.
+это флаг уже работающей системы, а целевой столбец — isFraud.
+в признаки модели флаг не добавляем: иначе будет утечка, и мы не поймём,
+находит ли модель мошенничество сама.
 
-7. ВЫВОДЫ ДЛЯ ДАЛЬНЕЙШЕГО ОБУЧЕНИЯ
+7. что дальше
 
-Необходимо сравнить модели по метрикам, учитывающим качество обнаружения
-мошеннических транзакций, например PR-AUC, Recall и F1.
-Одной только Accuracy недостаточно, если классы сильно несбалансированы.
+модели сравниваем по метрикам для редкого класса: pr-auc, recall, f1.
+accuracy при сильном дисбалансе мало что говорит.
 
-Графики и таблицы данного исследования сохранены в папке artifacts/eda.
+графики и таблицы: artifacts/eda
 """
 
-    (OUTPUT_DIR / "отчет_eda.txt").write_text(
-        report,
-        encoding="utf-8",
-    )
+    (OUTPUT_DIR / "отчет_eda.txt").write_text(report, encoding="utf-8")
 
-    print("Этап 3 из 5. Строим графики...")
-
-    # График 1. Количество обычных и мошеннических транзакций.
     plt.figure(figsize=(7, 5))
 
-    bars = plt.bar(
-        ["Обычные", "Мошеннические"],
-        [normal_count, fraud_count],
-    )
+    bars = plt.bar(["Обычные", "Мошеннические"], [normal_count, fraud_count])
 
     plt.title("Распределение классов транзакций")
     plt.ylabel("Количество транзакций")
@@ -339,88 +262,48 @@ isFlaggedFraud представляет собой существующий си
 
     plt.bar_label(bars, fmt="%.0f")
     plt.tight_layout()
-    plt.savefig(
-        OUTPUT_DIR / "распределение_классов.png",
-        dpi=150,
-    )
+    plt.savefig(OUTPUT_DIR / "распределение_классов.png", dpi=150)
     plt.close()
 
-    # График 2. Доля мошенничества в каждом типе транзакции.
-    plot_data = type_summary.sort_values(
-        "fraud_rate",
-        ascending=False,
-    )
+    plot_data = type_summary.sort_values("fraud_rate", ascending=False)
 
     plt.figure(figsize=(8, 5))
 
-    plt.bar(
-        plot_data["type"].astype(str),
-        plot_data["fraud_rate"] * 100,
-    )
+    plt.bar(plot_data["type"].astype(str), plot_data["fraud_rate"] * 100)
 
     plt.title("Доля мошеннических транзакций по типам операций")
     plt.ylabel("Мошеннические транзакции, %")
     plt.xlabel("Тип транзакции")
     plt.xticks(rotation=30, ha="right")
     plt.tight_layout()
-    plt.savefig(
-        OUTPUT_DIR / "мошенничество_по_типам.png",
-        dpi=150,
-    )
+    plt.savefig(OUTPUT_DIR / "мошенничество_по_типам.png", dpi=150)
     plt.close()
 
-    # График 3. Сравнение сумм обычных и мошеннических операций.
-    # Для ограничения использования памяти берём выборку обычных операций.
     max_normal_samples = 300_000
 
     normal_amounts = df.loc[df["isFraud"] == 0, "amount"]
     fraud_amounts = df.loc[df["isFraud"] == 1, "amount"]
 
     if len(normal_amounts) > max_normal_samples:
-        normal_amounts = normal_amounts.sample(
-            n=max_normal_samples,
-            random_state=42,
-        )
-
-    if len(fraud_amounts) > max_normal_samples:
-        fraud_amounts = fraud_amounts.sample(
-            n=max_normal_samples,
-            random_state=42,
-        )
+        normal_amounts = normal_amounts.sample(n=max_normal_samples, random_state=42)
 
     normal_log_amounts = np.log10(normal_amounts.clip(lower=0.01))
     fraud_log_amounts = np.log10(fraud_amounts.clip(lower=0.01))
 
     plt.figure(figsize=(8, 5))
 
-    plt.hist(
-        normal_log_amounts,
-        bins=60,
-        alpha=0.7,
-        label="Обычные",
-    )
+    plt.hist(normal_log_amounts, bins=60, alpha=0.7, label="Обычные")
 
-    plt.hist(
-        fraud_log_amounts,
-        bins=60,
-        alpha=0.7,
-        label="Мошеннические",
-    )
+    plt.hist(fraud_log_amounts, bins=60, alpha=0.7, label="Мошеннические")
 
     plt.title("Распределение сумм транзакций")
     plt.xlabel("Логарифм суммы операции по основанию 10")
     plt.ylabel("Количество транзакций")
     plt.legend()
     plt.tight_layout()
-    plt.savefig(
-        OUTPUT_DIR / "распределение_сумм.png",
-        dpi=150,
-    )
+    plt.savefig(OUTPUT_DIR / "распределение_сумм.png", dpi=150)
     plt.close()
 
-    print("Этап 4 из 5. Подготавливаем Dataset Tracking...")
-
-    # Вычисляем метаданные набора данных для регистрации в MLflow.
     dataset = mlflow.data.from_pandas(
         df,
         source=str(DATA_PATH.resolve()),
@@ -428,8 +311,6 @@ isFlaggedFraud представляет собой существующий си
         targets="isFraud",
         digest=file_digest[:32],
     )
-
-    print("Этап 5 из 5. Сохраняем результаты в MLflow...")
 
     mlflow.set_tracking_uri(TRACKING_URI)
     mlflow.set_experiment(EXPERIMENT_NAME)
@@ -460,20 +341,13 @@ isFlaggedFraud представляет собой существующий си
             }
         )
 
-        # Связываем этот запуск с набором данных.
         mlflow.log_input(dataset, context="eda")
 
-        # Загружаем отчёт, таблицы и графики в Artifacts.
-        mlflow.log_artifacts(
-            str(OUTPUT_DIR),
-            artifact_path="eda",
-        )
+        mlflow.log_artifacts(str(OUTPUT_DIR), artifact_path="eda")
 
-        print(f"Идентификатор запуска MLflow: {run.info.run_id}")
+        print(f"eda run_id: {run.info.run_id}")
 
-    print("Анализ завершён успешно.")
-    print(f"Отчёты и графики сохранены в: {OUTPUT_DIR}")
-    print(f"Эксперимент MLflow: {EXPERIMENT_NAME}")
+    print(f"артефакты: {OUTPUT_DIR}")
 
 
 if __name__ == "__main__":

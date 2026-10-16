@@ -29,10 +29,7 @@ class FakePredictionModel:
 
     def predict_proba(self, data: pd.DataFrame) -> NDArray[np.float64]:
         assert len(data) == 1
-        return np.asarray(
-            [[1.0 - self.probability, self.probability]],
-            dtype=np.float64,
-        )
+        return np.asarray([[1.0 - self.probability, self.probability]], dtype=np.float64)
 
 
 class BrokenPredictionModel:
@@ -40,10 +37,7 @@ class BrokenPredictionModel:
         raise RuntimeError("Тестовая ошибка предсказания")
 
 
-async def test_process_returns_fraud_prediction(
-    app: FastAPI,
-    client: AsyncClient,
-) -> None:
+async def test_process_returns_fraud_prediction(app: FastAPI, client: AsyncClient) -> None:
     app.state.fraud_model = FakePredictionModel(0.9)
     app.state.fraud_model_version = "1"
 
@@ -59,10 +53,7 @@ async def test_process_returns_fraud_prediction(
     assert body["model_alias"] == "champion"
 
 
-async def test_process_returns_normal_prediction(
-    app: FastAPI,
-    client: AsyncClient,
-) -> None:
+async def test_process_returns_normal_prediction(app: FastAPI, client: AsyncClient) -> None:
     app.state.fraud_model = FakePredictionModel(0.1)
     app.state.fraud_model_version = "2"
 
@@ -74,8 +65,7 @@ async def test_process_returns_normal_prediction(
 
 
 async def test_process_returns_503_when_model_is_not_loaded(
-    app: FastAPI,
-    client: AsyncClient,
+    app: FastAPI, client: AsyncClient
 ) -> None:
     app.state.fraud_model = None
     app.state.fraud_model_version = None
@@ -86,10 +76,7 @@ async def test_process_returns_503_when_model_is_not_loaded(
     assert "Модель не загружена" in response.json()["detail"]
 
 
-async def test_process_returns_500_when_prediction_fails(
-    app: FastAPI,
-    client: AsyncClient,
-) -> None:
+async def test_process_returns_500_when_prediction_fails(app: FastAPI, client: AsyncClient) -> None:
     app.state.fraud_model = BrokenPredictionModel()
     app.state.fraud_model_version = "1"
 
@@ -111,12 +98,7 @@ class FakeRegistryClient:
         self.tracking_uri = tracking_uri
         self.calls = 0
 
-    def get_model_version_by_alias(
-        self,
-        *,
-        name: str,
-        alias: str,
-    ) -> FakeModelVersion:
+    def get_model_version_by_alias(self, *, name: str, alias: str) -> FakeModelVersion:
         assert name == "FraudDetectionModel"
         assert alias == "champion"
 
@@ -127,9 +109,7 @@ class FakeRegistryClient:
         return FakeModelVersion()
 
 
-def test_load_champion_model_retries_after_registry_error(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_load_champion_model_retries_after_registry_error(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(FakeRegistryClient, "failures_before_success", 1)
     monkeypatch.setattr(FakeRegistryClient, "always_fail", False)
     monkeypatch.setattr(main, "MlflowClient", FakeRegistryClient)
