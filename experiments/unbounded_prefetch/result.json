@@ -1,0 +1,11 @@
+{
+  "scenario": "unbounded_prefetch",
+  "title": "ни лимита, ни prefetch",
+  "duration": 120.0,
+  "second_worker_at": 60.0,
+  "published": 20000,
+  "done": 4480,
+  "left_in_queue": 15520,
+  "redelivered_after_done": 0,
+  "lost": 0
+}

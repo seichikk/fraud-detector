@@ -1,5 +1,15 @@
 name: fraud-detector
 
+x-queue-env: &queue-env
+  RABBIT_URL: amqp://guest:guest@rabbitmq:5672/
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  QUEUE_MAX_LENGTH: ${QUEUE_MAX_LENGTH:-100}
+  MAX_DELIVERIES: ${MAX_DELIVERIES:-3}
+  WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
+  INFERENCE_SECONDS: ${INFERENCE_SECONDS:-0.2}
+
+x-database-url: &database-url postgresql+asyncpg://${POSTGRES_USER:-fraud}:${POSTGRES_PASSWORD:-fraud}@db:5432/${POSTGRES_DB:-fraud}
+
 services:
   db:
     image: postgres:17-alpine
@@ -7,6 +17,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-fraud}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fraud}
       POSTGRES_DB: ${POSTGRES_DB:-fraud}
+    ports:
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -16,30 +28,85 @@ services:
       retries: 10
     restart: unless-stopped
 
+  rabbitmq:
+    image: rabbitmq:4.1-management
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbit collect_statistics_interval 1000"
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - rabbitdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
   app:
-    build:
+    build: &build
       context: .
       args:
         GIT_SHA: ${GIT_SHA:-local}
     image: fraud-detector:local
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-fraud}:${POSTGRES_PASSWORD:-fraud}@db:5432/${POSTGRES_DB:-fraud}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      MLFLOW_TRACKING_URI: http://mlflow:5000
-      MLFLOW_LOAD_MODEL: "${MLFLOW_LOAD_MODEL:-true}"
+      <<: *queue-env
+      DATABASE_URL: *database-url
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
-      mlflow:
-        condition: service_started
+      rabbitmq:
+        condition: service_healthy
     restart: unless-stopped
-    logging:
+    logging: &logging
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
+
+  worker:
+    build: *build
+    image: fraud-detector:local
+    command: ["fraud-worker"]
+    environment:
+      <<: *queue-env
+      DATABASE_URL: *database-url
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      WORKER_HOST: 0.0.0.0
+      WORKER_PORT: "8000"
+      PREFETCH_COUNT: ${PREFETCH_COUNT:-}
+    ports:
+      - "127.0.0.1:8001-8004:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      mlflow:
+        condition: service_started
+    stop_grace_period: 40s
+    restart: unless-stopped
+    logging: *logging
+
+  source:
+    build: *build
+    image: fraud-detector:local
+    profiles: ["batch"]
+    command: ["fraud-source", "--file", "/data/raw/transactions.csv"]
+    environment: *queue-env
+    volumes:
+      - ./data:/data:ro
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    restart: "no"
+    logging: *logging
 
   mlflow-db:
     image: postgres:17-alpine
@@ -104,5 +171,6 @@ services:
 
 volumes:
   pgdata:
+  rabbitdata:
   mlflow_pgdata:
   minio_data:

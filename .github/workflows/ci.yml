@@ -101,16 +101,20 @@ jobs:
       - name: забираем код
         uses: actions/checkout@v7
 
-      - name: поднимаем приложение с базой
-        env:
-          MLFLOW_LOAD_MODEL: "false"
-        run: docker compose up --build --detach --wait --wait-timeout 120
+      - name: поднимаем приложение с базой и брокером
+        run: docker compose up --build --detach --wait --wait-timeout 180 db rabbitmq app
 
-      - name: дёргаем все три ручки
+      - name: дёргаем ручки и ставим задачу
         run: |
           curl --fail --silent --show-error http://localhost:8000/healthz
           curl --fail --silent --show-error http://localhost:8000/api/v1/version
           curl --fail --silent --show-error http://localhost:8000/api/v1/health
+          status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --header 'content-type: application/json' \
+            --data '{"step":1,"type":"TRANSFER","amount":181,"oldbalanceOrg":181,"newbalanceOrig":0,"oldbalanceDest":0,"newbalanceDest":0}' \
+            http://localhost:8000/api/v1/tasks)"
+          echo "постановка задачи вернула $status"
+          test "$status" = "202"
 
       - name: показываем логи
         if: always()

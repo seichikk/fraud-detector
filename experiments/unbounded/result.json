@@ -1,0 +1,11 @@
+{
+  "scenario": "unbounded",
+  "title": "очередь без лимита, prefetch 5",
+  "duration": 120.0,
+  "second_worker_at": 60.0,
+  "published": 20000,
+  "done": 3361,
+  "left_in_queue": 16639,
+  "redelivered_after_done": 0,
+  "lost": 0
+}

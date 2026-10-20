@@ -1,0 +1,11 @@
+{
+  "scenario": "bounded",
+  "title": "очередь на 100, prefetch 5",
+  "duration": 120.0,
+  "second_worker_at": 60.0,
+  "published": 3423,
+  "done": 3364,
+  "left_in_queue": 59,
+  "redelivered_after_done": 0,
+  "lost": 0
+}
