@@ -4,6 +4,7 @@ import time
 from collections.abc import Sequence
 from typing import Protocol
 
+import aiormq
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -28,6 +29,21 @@ class PostgresCheck:
         async with self._engine.connect() as connection:
             result = await connection.execute(text("select current_setting('server_version')"))
             return str(result.scalar_one())
+
+
+class RabbitCheck:
+    name = "rabbitmq"
+
+    def __init__(self, url: str) -> None:
+        self._url = url
+
+    async def fetch_version(self) -> str:
+        connection = await aiormq.connect(self._url)
+        try:
+            version = connection.server_properties.get("version", "")
+        finally:
+            await connection.close()
+        return version.decode() if isinstance(version, bytes) else str(version)
 
 
 def elapsed_ms(started: float) -> float:
