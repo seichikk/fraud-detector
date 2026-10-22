@@ -167,3 +167,44 @@ async def test_worker_http_endpoints_answer(worker_settings: Settings) -> None:
     assert liveness.json() == {"status": "ok"}
     assert stats.json()["prefetch"] == 3
     assert stats.json()["model_version"] is None
+
+
+async def test_process_scores_with_loaded_model(state: WorkerState) -> None:
+    app = create_worker_app(state.settings, state)
+    transaction = make_transaction().model_dump(by_alias=True)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://w") as http:
+        response = await http.post("/process", json=transaction)
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "prediction": "FRAUD",
+        "is_fraud": True,
+        "fraud_probability": pytest.approx(0.9),
+        "threshold": 0.5,
+        "model_name": "FraudDetectionModel",
+        "model_version": "7",
+        "model_alias": "champion",
+    }
+
+
+async def test_process_rejects_invalid_transaction(state: WorkerState) -> None:
+    app = create_worker_app(state.settings, state)
+    transaction = make_transaction().model_dump(by_alias=True)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://w") as http:
+        response = await http.post("/process", json={**transaction, "amount": -1})
+
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["amount"]
+    assert isinstance(state.predictor, FakePredictor)
+    assert state.predictor.calls == 0
+
+
+async def test_process_without_model_is_unavailable(worker_settings: Settings) -> None:
+    app = create_worker_app(worker_settings)
+    transaction = make_transaction().model_dump(by_alias=True)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://w") as http:
+        response = await http.post("/process", json=transaction)
+        wrong_method = await http.get("/process")
+
+    assert response.status_code == 503
+    assert wrong_method.status_code == 405

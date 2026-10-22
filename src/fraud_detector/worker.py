@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 
 import uvicorn
 from faststream import AckPolicy
-from faststream.asgi import AsgiFastStream, AsgiResponse, get, make_ping_asgi
+from faststream.asgi import AsgiFastStream, AsgiResponse, Request, get, make_ping_asgi, post
 from faststream.asgi.types import Scope
 from faststream.exceptions import RejectMessage
 from faststream.rabbit import Channel, RabbitBroker
@@ -25,7 +25,7 @@ from fraud_detector.messaging import (
     tasks_queue,
 )
 from fraud_detector.ml import Predictor, load_predictor
-from fraud_detector.schemas.tasks import TaskMessage, TaskResult
+from fraud_detector.schemas.tasks import Prediction, TaskMessage, TaskResult, Transaction
 
 logger = logging.getLogger(__name__)
 
@@ -141,11 +141,12 @@ def json_response(payload: object, status_code: int = 200) -> AsgiResponse:
     )
 
 
-def create_worker_app(settings: Settings) -> AsgiFastStream:
-    executor = ThreadPoolExecutor(
-        max_workers=settings.worker_concurrency, thread_name_prefix="inference"
-    )
-    state = WorkerState(settings=settings, executor=executor)
+def create_worker_app(settings: Settings, state: WorkerState | None = None) -> AsgiFastStream:
+    if state is None:
+        executor = ThreadPoolExecutor(
+            max_workers=settings.worker_concurrency, thread_name_prefix="inference"
+        )
+        state = WorkerState(settings=settings, executor=executor)
     broker = build_broker(state)
     engine = create_engine(settings.database_url)
 
@@ -163,7 +164,7 @@ def create_worker_app(settings: Settings) -> AsgiFastStream:
         )
 
     async def release() -> None:
-        await asyncio.to_thread(executor.shutdown, wait=True)
+        await asyncio.to_thread(state.executor.shutdown, wait=True)
         await engine.dispose()
         logger.info("воркер остановлен: %s", asdict(state.stats))
 
@@ -182,12 +183,38 @@ def create_worker_app(settings: Settings) -> AsgiFastStream:
             }
         )
 
+    @post
+    async def process(scope: Scope, request: Request) -> AsgiResponse:
+        predictor = state.predictor
+        if predictor is None:
+            return json_response({"detail": "модель ещё не загружена"}, status_code=503)
+        try:
+            transaction = Transaction.model_validate_json(await request.body())
+        except ValidationError as exc:
+            errors = exc.errors(include_url=False, include_context=False, include_input=False)
+            return json_response({"detail": errors}, status_code=422)
+
+        loop = asyncio.get_running_loop()
+        probability = await loop.run_in_executor(state.executor, predictor.predict, transaction)
+        is_fraud = probability >= settings.prediction_threshold
+        prediction = Prediction(
+            prediction="FRAUD" if is_fraud else "NORMAL",
+            is_fraud=is_fraud,
+            fraud_probability=probability,
+            threshold=settings.prediction_threshold,
+            model_name=settings.mlflow_model_name,
+            model_version=predictor.version,
+            model_alias=settings.mlflow_model_alias,
+        )
+        return json_response(prediction.model_dump(mode="json"))
+
     return AsgiFastStream(
         broker,
         asgi_routes=[
             ("/healthz", liveness),
             ("/health", make_ping_asgi(broker, timeout=settings.health_timeout_seconds)),
             ("/stats", stats),
+            ("/process", process),
         ],
         logger=logger,
         on_startup=[prepare],

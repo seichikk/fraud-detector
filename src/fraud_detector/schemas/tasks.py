@@ -46,6 +46,16 @@ class TaskResult(BaseModel):
     finished_at: datetime
 
 
+class Prediction(BaseModel):
+    prediction: Literal["FRAUD", "NORMAL"]
+    is_fraud: bool
+    fraud_probability: float = Field(ge=0, le=1)
+    threshold: float = Field(ge=0, le=1)
+    model_name: str
+    model_version: str
+    model_alias: str
+
+
 class TaskView(BaseModel):
     task_id: uuid.UUID
     source: TaskSource
