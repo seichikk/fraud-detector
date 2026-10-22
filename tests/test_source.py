@@ -124,6 +124,26 @@ async def test_rejected_publish_waits_and_retries_same_task(flaky: list[float]) 
     assert [sent.task_id for sent in broker.sent] == [message.task_id]
 
 
+async def test_stop_interrupts_retries_of_rejected_task(flaky: list[float]) -> None:
+    broker = FlakyBroker(failures=1_000_000)
+    stats = SourceStats()
+    stop = asyncio.Event()
+    stop.set()
+
+    await publish_with_backoff(
+        cast(RabbitBroker, broker),
+        Settings(rabbit_url=DEAD_RABBIT),
+        make_message(),
+        Backoff(0.01, 0.5),
+        stats,
+        stop,
+    )
+
+    assert stats.rejected == 1
+    assert stats.published == 0
+    assert broker.sent == []
+
+
 async def test_batch_publishes_every_row_once(flaky: list[float]) -> None:
     broker = FlakyBroker(failures=2)
     stats = SourceStats()
