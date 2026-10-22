@@ -90,12 +90,24 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: поднимаем rabbitmq, без него приложение не стартует
+        run: |
+          docker network create smoke
+          docker run --detach --name rabbitmq --network smoke \
+            --health-cmd "rabbitmq-diagnostics -q ping" --health-interval 5s \
+            rabbitmq:4.1-management
+          for _ in $(seq 1 60); do
+            test "$(docker inspect --format '{{.State.Health.Status}}' rabbitmq)" = healthy && break
+            sleep 2
+          done
+
       - name: запускаем образ из реестра и спрашиваем версию
         env:
           IMAGE: ${{ needs.publish.outputs.image }}
           VERSION: ${{ needs.publish.outputs.version }}
         run: |
-          docker run --detach --name smoke --publish 8000:8000 "$IMAGE:$VERSION"
+          docker run --detach --name smoke --network smoke --publish 8000:8000 \
+            --env RABBIT_URL=amqp://guest:guest@rabbitmq:5672/ "$IMAGE:$VERSION"
           for _ in $(seq 1 30); do
             curl --fail --silent http://localhost:8000/healthz && break
             sleep 1
@@ -103,3 +115,7 @@ jobs:
           reported="$(curl --fail --silent http://localhost:8000/api/v1/version | python3 -c 'import json, sys; print(json.load(sys.stdin)["version"])')"
           echo "в образе $IMAGE:$VERSION живёт версия $reported"
           test "$reported" = "$VERSION"
+
+      - name: показываем логи
+        if: always()
+        run: docker logs smoke
