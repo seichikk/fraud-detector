@@ -1,3 +1,5 @@
 FROM ghcr.io/mlflow/mlflow:v3.17.0
 
 RUN pip install --no-cache-dir "psycopg[binary]" boto3
+
+COPY scripts/create_bucket.py /opt/create_bucket.py
