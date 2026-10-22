@@ -64,6 +64,7 @@ async def publish_with_backoff(
     message: TaskMessage,
     backoff: Backoff,
     stats: SourceStats,
+    stop: asyncio.Event | None = None,
 ) -> None:
     while True:
         attempt = message.model_copy(update={"created_at": datetime.now(UTC)})
@@ -74,6 +75,8 @@ async def publish_with_backoff(
             pause = backoff.on_reject()
             stats.pause_seconds = pause
             await asyncio.sleep(pause)
+            if stop is not None and stop.is_set():
+                return
         else:
             stats.published += 1
             backoff.on_success()
@@ -100,7 +103,7 @@ async def run_batch(
             created_at=datetime.now(UTC),
             transaction=transaction,
         )
-        await publish_with_backoff(broker, settings, message, backoff, stats)
+        await publish_with_backoff(broker, settings, message, backoff, stats, stop)
 
 
 async def write_metrics(stats: SourceStats, path: Path | None, period: float = 1.0) -> None:
